@@ -3,10 +3,13 @@
 A working single-product-checkout clothing store. Next.js 16 (App Router, TypeScript) ·
 Supabase Postgres · Razorpay **test mode** · Tailwind v4 · deploys to Vercel.
 
-Every operation exists as a standalone REST route under `/api`. The storefront pages call
-those same routes over HTTP rather than querying the database inline — so if a page renders,
-the route behind it works. That is deliberate: the Phase 2 agent layer will call exactly this
-surface.
+Every operation exists as a standalone REST route under `/api` — that is the contract the
+Phase 2 agent layer will call.
+
+The read queries live in [`src/lib/data.ts`](src/lib/data.ts), and both entry points use them:
+the API routes wrap the result in HTTP, the server components render it directly. One
+implementation each, so the two cannot drift, and no page depends on being able to reach its
+own deployment over the network.
 
 ---
 
@@ -261,8 +264,9 @@ Afterwards:
 
 - Set `CRON_SECRET` to a long random string. Vercel Cron sends it automatically as a bearer
   token, and `/api/orders/cancel-expired` will start rejecting unauthenticated calls.
-- Optionally set `NEXT_PUBLIC_SITE_URL` to the deployment URL, so server components address
-  their own API routes explicitly instead of inferring the origin from request headers.
+- Check **Settings → Deployment Protection**. Vercel Authentication is on by default and
+  answers API clients with an HTML login page, so Postman and the sweeper will fail against
+  production until you disable it or use a bypass token. See [`DEPLOY.md`](DEPLOY.md) §3.
 - Verify the cron under **Project → Cron Jobs**. `vercel.json` already registers
   `/api/orders/cancel-expired` at `*/10 * * * *`. Hobby-plan projects are limited to daily
   crons — on Hobby, change the schedule to `0 3 * * *` or call the endpoint from an external
@@ -326,13 +330,13 @@ src/
       orders/webhook/route.ts      POST razorpay events
       admin/overview/route.ts      GET dashboard data
   lib/
+    data.ts       shared read layer — routes and pages both call this
     supabase.ts   service-role client (server only)
     razorpay.ts   SDK + HMAC verification (server only)
     api.ts        response envelope, error wrapper, validators
     env.ts        env access with clear failure messages
     money.ts      paise → ₹ formatting
     types.ts      Product, Order, statuses
-    server-fetch.ts   lets server components call our own API routes
 supabase/schema.sql   tables, constraints, RLS, the three stock functions
 supabase/seed.sql     15 products, one with stock_count = 1
 scripts/smoke-test.mjs

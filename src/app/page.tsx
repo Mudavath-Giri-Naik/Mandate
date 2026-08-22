@@ -1,16 +1,10 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { apiGet } from '@/lib/server-fetch';
+import { listProducts } from '@/lib/data';
 import { formatPaise } from '@/lib/money';
-import type { Product } from '@/lib/types';
 import { ErrorNotice, SetupNotice } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
-
-interface ProductsPayload {
-  count: number;
-  products: Product[];
-}
 
 const SIZES = ['S', 'M', 'L', 'XL', '32', '34'];
 const COLORS = [
@@ -35,15 +29,14 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
   const color = read('color');
   const maxPrice = read('max_price');
 
-  const qs = new URLSearchParams();
-  if (size) qs.set('size', size);
-  if (color) qs.set('color', color);
-  if (maxPrice) qs.set('max_price', maxPrice);
-  const query = qs.toString();
-
-  const result = await apiGet<ProductsPayload>(`/api/products${query ? `?${query}` : ''}`);
+  const result = await listProducts({
+    size,
+    color,
+    maxPrice: maxPrice ? Number(maxPrice) : null,
+  });
 
   const hasFilters = Boolean(size || color || maxPrice);
+  const products = result.ok ? result.data : [];
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
@@ -117,12 +110,12 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
 
       {/* ------------------------------------------------------------- results -- */}
       {!result.ok ? (
-        result.error.code === 'CONFIGURATION_ERROR' ? (
-          <SetupNotice message={result.error.message} />
+        result.code === 'CONFIGURATION_ERROR' ? (
+          <SetupNotice message={result.message} />
         ) : (
-          <ErrorNotice title="Could not load products" message={result.error.message} />
+          <ErrorNotice title="Could not load products" message={result.message} />
         )
-      ) : result.data.products.length === 0 ? (
+      ) : products.length === 0 ? (
         <p className="rounded-lg border border-line bg-surface p-10 text-center text-sm text-muted">
           {hasFilters
             ? 'Nothing in stock matches those filters.'
@@ -131,10 +124,10 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
       ) : (
         <>
           <p className="mb-4 text-sm text-muted">
-            {result.data.count} item{result.data.count === 1 ? '' : 's'} in stock
+            {products.length} item{products.length === 1 ? '' : 's'} in stock
           </p>
           <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {result.data.products.map((p) => (
+            {products.map((p) => (
               <li key={p.id}>
                 <Link
                   href={`/product/${p.id}`}

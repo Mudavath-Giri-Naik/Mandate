@@ -1,6 +1,5 @@
-import { supabaseAdmin } from '@/lib/supabase';
+import { getOrder } from '@/lib/data';
 import { ok, fail, withErrors, isUuid } from '@/lib/api';
-import type { OrderWithProduct } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,21 +15,11 @@ export const GET = withErrors(
       return fail('VALIDATION_ERROR', `"${id}" is not a valid order id.`, 400);
     }
 
-    const { data, error } = await supabaseAdmin()
-      .from('orders')
-      .select('*, product:products(id, name, size, color, image_url)')
-      .eq('id', id)
-      .maybeSingle();
+    const result = await getOrder(id);
+    if (!result.ok) {
+      return fail(result.code, result.message, result.code === 'NOT_FOUND' ? 404 : 500);
+    }
 
-    if (error) return fail('INTERNAL_ERROR', error.message, 500);
-    if (!data) return fail('NOT_FOUND', `No order with id ${id}.`, 404);
-
-    const order = data as OrderWithProduct;
-    return ok({
-      ...order,
-      // Convenience flags so a poller does not have to know the state machine.
-      is_settled: ['paid', 'failed', 'cancelled'].includes(order.status),
-      is_paid: order.status === 'paid',
-    });
+    return ok(result.data);
   },
 );

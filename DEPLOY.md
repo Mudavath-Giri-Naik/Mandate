@@ -58,18 +58,30 @@ Press **Deploy**.
 
 ---
 
-## 3. Point the app at itself — **you**
+## 3. Deployment Protection — **you**, if you want Postman to reach production
 
-After the first deploy you know the URL. Add one more variable and redeploy:
+**Settings → Deployment Protection.**
 
-| Name | Value |
-| --- | --- |
-| `NEXT_PUBLIC_SITE_URL` | `https://your-app.vercel.app` |
+Vercel Authentication is on by default. It gates the deployment behind a Vercel SSO login, and
+it does not distinguish a browser from an API client: your browser passes because you are
+logged into Vercel, but `curl`, Postman, and the GitHub Actions sweeper all receive the **HTML
+login page** instead of JSON. That produces the classic `Unexpected token '<', "<!DOCTYPE"...`.
 
-The server components can infer their own origin from request headers without this, which is
-why the first deploy works. Setting it explicitly removes the guesswork behind Vercel's proxy.
+The storefront itself does not care — pages read the database through `lib/data` rather than
+calling their own API over HTTP, so nothing server-side depends on being able to reach the
+public URL. But anything *outside* Vercel that needs `/api` does care.
 
-**Settings → Deployments → Redeploy** (untick "use existing build cache").
+Pick one:
+
+- **Turn it off** — *Vercel Authentication → Disabled*. Simplest for a test-mode project, and
+  what you want if you plan to hit the API from Postman. Note `/admin` has no auth of its own,
+  so this makes stock and order data public.
+- **Keep it on, use a bypass token** — *Protection Bypass for Automation* → generate a secret,
+  then send `x-vercel-protection-bypass: <secret>` on every request. Add it as a Postman
+  collection header and as a second header in the Actions workflow.
+
+There is no step 3 beyond this. `NEXT_PUBLIC_SITE_URL` used to be required here and no longer
+is — the app never needs to know its own address.
 
 ---
 
@@ -158,6 +170,11 @@ a silent no-op.
 ---
 
 ## Troubleshooting
+
+**`Unexpected token '<', "<!DOCTYPE"...`** — something asked for JSON and got an HTML page.
+Almost always Deployment Protection (step 3) answering an API client with the Vercel login
+screen. Check with `curl -i https://your-app.vercel.app/api/products`: a `401` plus HTML
+confirms it.
 
 **Every API route returns `CONFIGURATION_ERROR`** — an environment variable is missing on
 Vercel. The message names which one. Env changes need a redeploy to take effect.

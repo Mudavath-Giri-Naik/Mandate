@@ -1,6 +1,5 @@
-import { supabaseAdmin } from '@/lib/supabase';
+import { getProduct } from '@/lib/data';
 import { ok, fail, withErrors, isUuid } from '@/lib/api';
-import type { Product } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,19 +15,11 @@ export const GET = withErrors(
       return fail('VALIDATION_ERROR', `"${id}" is not a valid product id.`, 400);
     }
 
-    const { data, error } = await supabaseAdmin()
-      .from('products')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
+    const result = await getProduct(id);
+    if (!result.ok) {
+      return fail(result.code, result.message, result.code === 'NOT_FOUND' ? 404 : 500);
+    }
 
-    if (error) return fail('INTERNAL_ERROR', error.message, 500);
-    if (!data) return fail('NOT_FOUND', `No product with id ${id}.`, 404);
-
-    const product = data as Product;
-    return ok({
-      ...product,
-      in_stock: product.stock_count > 0 && product.status !== 'sold_out',
-    });
+    return ok(result.data);
   },
 );

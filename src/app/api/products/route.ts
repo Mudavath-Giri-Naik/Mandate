@@ -1,6 +1,5 @@
-import { supabaseAdmin } from '@/lib/supabase';
+import { listProducts } from '@/lib/data';
 import { ok, fail, withErrors } from '@/lib/api';
-import type { Product } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +13,9 @@ export const dynamic = 'force-dynamic';
  *   ?color=Black       exact, case-insensitive
  *   ?max_price=200000  paise, inclusive
  *   ?include_sold_out=true   also return exhausted items (admin/debug)
+ *
+ * The query itself lives in lib/data so the storefront pages can call it
+ * without going back over HTTP.
  */
 export const GET = withErrors(async (req: Request) => {
   const url = new URL(req.url);
@@ -34,26 +36,12 @@ export const GET = withErrors(async (req: Request) => {
     }
   }
 
-  let query = supabaseAdmin()
-    .from('products')
-    .select('*')
-    // All seed rows share a created_at, so without a tiebreaker the order
-    // shuffles between requests. id keeps the grid stable.
-    .order('created_at', { ascending: true })
-    .order('id', { ascending: true });
+  const result = await listProducts({ size, color, maxPrice, includeSoldOut });
+  if (!result.ok) return fail(result.code, result.message, 500);
 
-  if (!includeSoldOut) query = query.gt('stock_count', 0).neq('status', 'sold_out');
-  if (size) query = query.ilike('size', size);
-  if (color) query = query.ilike('color', color);
-  if (maxPrice !== null) query = query.lte('price', maxPrice);
-
-  const { data, error } = await query;
-  if (error) return fail('INTERNAL_ERROR', error.message, 500);
-
-  const products = (data ?? []) as Product[];
   return ok({
-    count: products.length,
+    count: result.data.length,
     filters: { size, color, max_price: maxPrice, include_sold_out: includeSoldOut },
-    products,
+    products: result.data,
   });
 });

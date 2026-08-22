@@ -1,12 +1,9 @@
 import Link from 'next/link';
-import { apiGet } from '@/lib/server-fetch';
-import type { Product } from '@/lib/types';
+import { getProduct } from '@/lib/data';
 import { ErrorNotice, SetupNotice } from '@/components/ui';
 import CheckoutForm from './checkout-form';
 
 export const dynamic = 'force-dynamic';
-
-type ProductDetail = Product & { in_stock: boolean };
 
 export default async function CheckoutPage({ searchParams }: PageProps<'/checkout'>) {
   const params = await searchParams;
@@ -26,15 +23,15 @@ export default async function CheckoutPage({ searchParams }: PageProps<'/checkou
     );
   }
 
-  const result = await apiGet<ProductDetail>(`/api/products/${productId}`);
+  const result = await getProduct(productId);
 
   if (!result.ok) {
     return (
       <div className="mx-auto max-w-xl px-6 py-12">
-        {result.error.code === 'CONFIGURATION_ERROR' ? (
-          <SetupNotice message={result.error.message} />
+        {result.code === 'CONFIGURATION_ERROR' ? (
+          <SetupNotice message={result.message} />
         ) : (
-          <ErrorNotice title="Could not load this product" message={result.error.message} />
+          <ErrorNotice title="Could not load this product" message={result.message} />
         )}
       </div>
     );

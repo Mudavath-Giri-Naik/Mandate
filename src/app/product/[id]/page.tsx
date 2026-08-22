@@ -1,27 +1,24 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { apiGet } from '@/lib/server-fetch';
+import { getProduct } from '@/lib/data';
 import { formatPaise } from '@/lib/money';
-import type { Product } from '@/lib/types';
 import { ErrorNotice, SetupNotice } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
-type ProductDetail = Product & { in_stock: boolean };
-
 export default async function ProductPage({ params }: PageProps<'/product/[id]'>) {
   const { id } = await params;
-  const result = await apiGet<ProductDetail>(`/api/products/${id}`);
+  const result = await getProduct(id);
 
   if (!result.ok) {
-    if (result.error.code === 'NOT_FOUND') notFound();
+    if (result.code === 'NOT_FOUND') notFound();
     return (
       <div className="mx-auto max-w-3xl px-6 py-12">
-        {result.error.code === 'CONFIGURATION_ERROR' ? (
-          <SetupNotice message={result.error.message} />
+        {result.code === 'CONFIGURATION_ERROR' ? (
+          <SetupNotice message={result.message} />
         ) : (
-          <ErrorNotice title="Could not load this product" message={result.error.message} />
+          <ErrorNotice title="Could not load this product" message={result.message} />
         )}
       </div>
     );

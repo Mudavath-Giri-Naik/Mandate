@@ -1,35 +1,21 @@
 import Link from 'next/link';
-import { apiGet } from '@/lib/server-fetch';
+import { getAdminOverview } from '@/lib/data';
 import { formatPaise } from '@/lib/money';
 import { StatusPill, ErrorNotice, SetupNotice } from '@/components/ui';
-import type { Product, OrderWithProduct } from '@/lib/types';
 import SweepButton from './sweep-button';
 
 export const dynamic = 'force-dynamic';
 
-interface Overview {
-  stats: {
-    total_products: number;
-    total_stock: number;
-    sold_out_products: number;
-    total_orders: number;
-    orders_by_status: Record<string, number>;
-    revenue_paise: number;
-  };
-  products: Product[];
-  orders: OrderWithProduct[];
-}
-
 export default async function AdminPage() {
-  const result = await apiGet<Overview>('/api/admin/overview');
+  const result = await getAdminOverview();
 
   if (!result.ok) {
     return (
       <div className="mx-auto max-w-xl px-6 py-12">
-        {result.error.code === 'CONFIGURATION_ERROR' ? (
-          <SetupNotice message={result.error.message} />
+        {result.code === 'CONFIGURATION_ERROR' ? (
+          <SetupNotice message={result.message} />
         ) : (
-          <ErrorNotice title="Could not load the dashboard" message={result.error.message} />
+          <ErrorNotice title="Could not load the dashboard" message={result.message} />
         )}
       </div>
     );
