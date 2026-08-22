@@ -239,13 +239,18 @@ Also worth trying:
 
 ### 4.4 Resetting
 
-```sql
--- one product back to a single unit, for another race run
-update products set stock_count = 1, status = 'available' where name ilike '%Shibori%';
-
--- wipe orders and reload the catalogue
--- (just re-run supabase/seed.sql)
+```bash
+npm run db:reset          # prompts first
+node scripts/reset-db.mjs --yes
 ```
+
+Deletes every order and puts each product's stock back to its seeded value, reporting the
+drift before it acts. Idempotent — running it on a clean database does nothing. It talks to
+Supabase directly, so it does not matter whether you were testing localhost or production;
+there is one database behind both.
+
+Re-running [`supabase/setup.sql`](supabase/setup.sql) does the same thing and rebuilds the
+schema as well.
 
 ---
 
@@ -341,6 +346,7 @@ supabase/schema.sql   tables, constraints, RLS, the three stock functions
 supabase/seed.sql     15 products, one with stock_count = 1
 scripts/smoke-test.mjs
 scripts/race-test.mjs
+scripts/reset-db.mjs
 postman/Mandate.postman_collection.json
 ```
 
