@@ -150,8 +150,13 @@ Idempotent in both directions: every transition is a conditional update guarded 
 ### `POST /api/orders/cancel-expired` and `GET` (Vercel Cron)
 
 Releases stock from orders stuck in `reserved` past `RESERVATION_TTL_MINUTES`.
-`GET` is the verb Vercel Cron uses; [`vercel.json`](vercel.json) schedules it every 10 minutes.
-`POST` accepts `{ "minutes": 0 }` so you can expire everything immediately while testing.
+`GET` is the verb schedulers use; `POST` accepts `{ "minutes": 0 }` so you can expire
+everything immediately while testing.
+
+Two schedules call it, because Vercel's Hobby plan allows only one cron per day:
+[`vercel.json`](vercel.json) runs it daily at 03:00 UTC, and
+[`.github/workflows/sweep-expired-reservations.yml`](.github/workflows/sweep-expired-reservations.yml)
+runs it every 10 minutes for free. See [`DEPLOY.md`](DEPLOY.md) §4.
 
 Guarded by `Authorization: Bearer $CRON_SECRET` when `CRON_SECRET` is set; open when it isn't,
 so Postman works locally.

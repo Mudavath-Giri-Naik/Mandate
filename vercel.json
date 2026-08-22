@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/orders/cancel-expired",
-      "schedule": "*/10 * * * *"
+      "schedule": "0 3 * * *"
     }
   ]
 }

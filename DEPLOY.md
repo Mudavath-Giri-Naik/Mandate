@@ -5,29 +5,24 @@ with `!` to run it in this session so I see the output directly.
 
 ---
 
-## 1. Push to GitHub — **you**
+## 1. GitHub — done
 
-`create-next-app` already ran `git init`, so there is a repo here with no commits yet.
+The repo is live at **https://github.com/Mudavath-Giri-Naik/Mandate** on `main`.
+
+`.env.local` and `.mcp.json` are gitignored, so no Supabase secret key, Razorpay secret, or
+access token is in the history. To re-check after any future commit:
+
+```bash
+git log --all -S'sb_secret_sL' --oneline    # must print nothing
+git log --all -S'RAZORPAY_KEY_SECRET=' --oneline
+```
+
+To push later work:
 
 ```bash
 git add -A
-git commit -m "Phase 1 storefront: Next.js + Supabase + Razorpay test mode"
-gh repo create mandate-storefront --private --source=. --push
-```
-
-If you do not have `gh`, create an empty private repo on github.com and:
-
-```bash
-git remote add origin https://github.com/<you>/mandate-storefront.git
-git branch -M main
-git push -u origin main
-```
-
-`.env.local` and `.mcp.json` are gitignored — neither your service-role key nor your Razorpay
-secret nor your Supabase access token will be pushed. Worth confirming before you push:
-
-```bash
-git status --porcelain | grep -E '\.env\.local|\.mcp\.json'   # must print nothing
+git commit -m "…"
+git push
 ```
 
 ---
@@ -78,20 +73,44 @@ why the first deploy works. Setting it explicitly removes the guesswork behind V
 
 ---
 
-## 4. Check the cron — **you**
+## 4. The expiry sweeper
 
-**Project → Cron Jobs.** `vercel.json` registers `/api/orders/cancel-expired` at
-`*/10 * * * *`.
+Two schedules run the same endpoint, because Vercel's Hobby plan caps cron jobs at **one per
+day** — it rejects anything more frequent with:
 
-⚠️ **Hobby plan only allows one cron job, running at most once per day.** If you are on Hobby,
-the every-10-minutes schedule will be rejected. Either:
+> Hobby accounts are limited to daily cron jobs.
 
-- change `vercel.json` to `"schedule": "0 3 * * *"` (daily at 03:00 UTC), or
-- delete the `crons` block and hit the endpoint from an external scheduler
-  (cron-job.org, GitHub Actions) every 10 minutes with the bearer token.
+**Vercel (daily).** `vercel.json` is set to `0 3 * * *` — 03:00 UTC, which Hobby accepts.
+Check it under **Project → Cron Jobs** after deploying. On a Pro plan you can change this back
+to `*/10 * * * *` and skip the rest of this section.
 
-Nothing breaks either way — the sweeper is a safety net, and the common case (customer
-dismisses the widget) already releases stock instantly via `/api/orders/verify`.
+**GitHub Actions (every 10 minutes).** `.github/workflows/sweep-expired-reservations.yml`
+calls the same endpoint on a `*/10` schedule, free on any plan. To switch it on:
+
+**Repo → Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret | Value |
+| --- | --- |
+| `APP_URL` | `https://your-app.vercel.app` (no trailing slash) |
+| `CRON_SECRET` | the same value you set in Vercel |
+
+Until both exist the job exits cleanly with a note instead of failing, so a fresh clone does
+not show a red X. You can trigger it by hand any time from the **Actions** tab
+(*Sweep expired reservations* → *Run workflow*) — useful for confirming the secrets are right
+without waiting for the schedule.
+
+GitHub's scheduler is best-effort: a `*/10` job can slip by several minutes under load, and
+schedules pause on repos with no activity for 60 days. That is acceptable here.
+
+**Why a daily sweep is not actually a disaster.** The sweeper only catches stragglers. When a
+customer dismisses the Razorpay widget, the browser immediately calls `/api/orders/verify`
+with `{ failed: true }` and the unit goes back within the same second. The sweeper exists for
+the cases the browser cannot report — a closed laptop, a dropped connection, a killed tab.
+Those are rare, and on Hobby-without-Actions they would hold stock for up to 24 hours.
+
+If you would rather not use GitHub Actions, any external scheduler works — point
+[cron-job.org](https://cron-job.org) at `GET /api/orders/cancel-expired` with the
+`Authorization: Bearer <CRON_SECRET>` header.
 
 ---
 
