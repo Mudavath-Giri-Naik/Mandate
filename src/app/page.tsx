@@ -1,69 +1,174 @@
-import Image from "next/image";
+import Image from 'next/image';
+import Link from 'next/link';
+import { apiGet } from '@/lib/server-fetch';
+import { formatPaise } from '@/lib/money';
+import type { Product } from '@/lib/types';
+import { ErrorNotice, SetupNotice } from '@/components/ui';
 
-export default function Home() {
+export const dynamic = 'force-dynamic';
+
+interface ProductsPayload {
+  count: number;
+  products: Product[];
+}
+
+const SIZES = ['S', 'M', 'L', 'XL', '32', '34'];
+const COLORS = [
+  'White', 'Black', 'Olive', 'Charcoal', 'Navy', 'Grey',
+  'Cream', 'Rust', 'Indigo', 'Khaki', 'Tan',
+];
+const PRICE_CAPS = [
+  { label: 'Under ₹1,000', value: '100000' },
+  { label: 'Under ₹2,000', value: '200000' },
+  { label: 'Under ₹3,000', value: '300000' },
+  { label: 'Under ₹5,000', value: '500000' },
+];
+
+export default async function HomePage({ searchParams }: PageProps<'/'>) {
+  const params = await searchParams;
+  const read = (k: string) => {
+    const v = params[k];
+    return typeof v === 'string' && v !== '' ? v : '';
+  };
+
+  const size = read('size');
+  const color = read('color');
+  const maxPrice = read('max_price');
+
+  const qs = new URLSearchParams();
+  if (size) qs.set('size', size);
+  if (color) qs.set('color', color);
+  if (maxPrice) qs.set('max_price', maxPrice);
+  const query = qs.toString();
+
+  const result = await apiGet<ProductsPayload>(`/api/products${query ? `?${query}` : ''}`);
+
+  const hasFilters = Boolean(size || color || maxPrice);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mb-8">
+        <h1 className="text-3xl font-semibold tracking-tight">Everyday essentials</h1>
+        <p className="mt-2 text-sm text-muted">
+          Single-item checkout. Stock is reserved the moment you press Buy Now and released
+          automatically if payment is abandoned.
+        </p>
+      </div>
+
+      {/* ------------------------------------------------------------ filters -- */}
+      <form method="get" className="mb-8 rounded-xl border border-line bg-surface p-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-muted">Size</span>
+            <select
+              name="size"
+              defaultValue={size}
+              className="w-full rounded-md border border-line bg-white px-3 py-2 text-sm"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              <option value="">Any size</option>
+              {SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-muted">Colour</span>
+            <select
+              name="color"
+              defaultValue={color}
+              className="w-full rounded-md border border-line bg-white px-3 py-2 text-sm"
             >
-              Learning
-            </a>{" "}
-            center.
+              <option value="">Any colour</option>
+              {COLORS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-muted">Max price</span>
+            <select
+              name="max_price"
+              defaultValue={maxPrice}
+              className="w-full rounded-md border border-line bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Any price</option>
+              {PRICE_CAPS.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <div className="flex items-end gap-2">
+            <button
+              type="submit"
+              className="rounded-md bg-stone-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-stone-700"
+            >
+              Apply
+            </button>
+            {hasFilters && (
+              <Link
+                href="/"
+                className="rounded-md border border-line px-4 py-2 text-sm text-muted transition hover:text-foreground"
+              >
+                Clear
+              </Link>
+            )}
+          </div>
+        </div>
+      </form>
+
+      {/* ------------------------------------------------------------- results -- */}
+      {!result.ok ? (
+        result.error.code === 'CONFIGURATION_ERROR' ? (
+          <SetupNotice message={result.error.message} />
+        ) : (
+          <ErrorNotice title="Could not load products" message={result.error.message} />
+        )
+      ) : result.data.products.length === 0 ? (
+        <p className="rounded-lg border border-line bg-surface p-10 text-center text-sm text-muted">
+          {hasFilters
+            ? 'Nothing in stock matches those filters.'
+            : 'No products yet — run supabase/seed.sql to load the catalogue.'}
+        </p>
+      ) : (
+        <>
+          <p className="mb-4 text-sm text-muted">
+            {result.data.count} item{result.data.count === 1 ? '' : 's'} in stock
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+          <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {result.data.products.map((p) => (
+              <li key={p.id}>
+                <Link
+                  href={`/product/${p.id}`}
+                  className="group block overflow-hidden rounded-xl border border-line bg-surface transition hover:shadow-md"
+                >
+                  <div className="relative aspect-square bg-stone-100">
+                    {p.image_url && (
+                      <Image
+                        src={p.image_url}
+                        alt={p.name}
+                        fill
+                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                        className="object-cover transition duration-300 group-hover:scale-[1.02]"
+                      />
+                    )}
+                    {p.stock_count <= 3 && (
+                      <span className="absolute left-3 top-3 rounded-full bg-red-600 px-2.5 py-1 text-xs font-medium text-white">
+                        Only {p.stock_count} left
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h2 className="text-sm font-medium leading-snug">{p.name}</h2>
+                    <p className="mt-1 text-xs text-muted">
+                      {[p.size, p.color].filter(Boolean).join(' · ')}
+                    </p>
+                    <p className="mt-3 text-sm font-semibold">{formatPaise(p.price)}</p>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

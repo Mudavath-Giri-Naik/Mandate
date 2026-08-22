@@ -1,7 +1,10 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  images: {
+    // Seed catalogue uses Unsplash photography.
+    remotePatterns: [{ protocol: 'https', hostname: 'images.unsplash.com' }],
+  },
 };
 
 export default nextConfig;

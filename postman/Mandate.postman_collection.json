@@ -1,0 +1,432 @@
+{
+  "info": {
+    "name": "Mandate Storefront API",
+    "description": "Phase 1 e-commerce API. Every route returns { ok: true, data } or { ok: false, error: { code, message } }.\n\nSet the collection variable `baseUrl` to http://localhost:3000 (or your Vercel URL).\n\nRun the requests top to bottom: 'List products' captures a product_id, 'Create order' captures order_id.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "product_id", "value": "" },
+    { "key": "single_stock_product_id", "value": "" },
+    { "key": "order_id", "value": "" },
+    { "key": "razorpay_order_id", "value": "" },
+    { "key": "cron_secret", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "List products",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('ok envelope', () => pm.expect(body.ok).to.be.true);",
+                  "pm.test('returns products', () => pm.expect(body.data.products.length).to.be.above(0));",
+                  "",
+                  "// Capture ids for the rest of the collection.",
+                  "const first = body.data.products[0];",
+                  "if (first) pm.collectionVariables.set('product_id', first.id);",
+                  "",
+                  "const lastOne = body.data.products.find(p => p.stock_count === 1);",
+                  "if (lastOne) {",
+                  "  pm.collectionVariables.set('single_stock_product_id', lastOne.id);",
+                  "  console.log('stock_count = 1 item (use this for the race test):', lastOne.id, lastOne.name);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/products", "host": ["{{baseUrl}}"], "path": ["api", "products"] }
+          }
+        },
+        {
+          "name": "List products — filter by size",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/products?size=M",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products"],
+              "query": [{ "key": "size", "value": "M" }]
+            }
+          }
+        },
+        {
+          "name": "List products — filter by colour",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/products?color=Black",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products"],
+              "query": [{ "key": "color", "value": "Black" }]
+            }
+          }
+        },
+        {
+          "name": "List products — max_price (paise)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/products?max_price=200000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products"],
+              "query": [
+                { "key": "max_price", "value": "200000", "description": "₹2,000 in paise" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List products — combined filters",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/products?size=M&color=Indigo&max_price=200000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products"],
+              "query": [
+                { "key": "size", "value": "M" },
+                { "key": "color", "value": "Indigo" },
+                { "key": "max_price", "value": "200000" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List products — bad max_price (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/products?max_price=abc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products"],
+              "query": [{ "key": "max_price", "value": "abc" }]
+            }
+          }
+        },
+        {
+          "name": "Get product by id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('has live stock_count', () => pm.expect(d).to.have.property('stock_count'));",
+                  "console.log(d.name, '— stock:', d.stock_count);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/products/{{product_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products", "{{product_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get product — unknown id (expect 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('404', () => pm.response.to.have.status(404));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/products/00000000-0000-4000-8000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products", "00000000-0000-4000-8000-000000000000"]
+            }
+          }
+        },
+        {
+          "name": "Get product — malformed id (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('400', () => pm.response.to.have.status(400));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/products/not-a-uuid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products", "not-a-uuid"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Create order (reserves stock)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('order is reserved', () => pm.expect(d.order.status).to.eql('reserved'));",
+                  "pm.test('razorpay order created', () => pm.expect(d.razorpay.id).to.be.a('string'));",
+                  "pm.test('amount matches in paise', () => pm.expect(d.razorpay.amount).to.eql(d.order.amount));",
+                  "pm.collectionVariables.set('order_id', d.order.id);",
+                  "pm.collectionVariables.set('razorpay_order_id', d.razorpay.id);",
+                  "console.log('stock after reservation:', d.product.stock_count_after_reservation);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{product_id}}\",\n  \"customer_name\": \"Asha Menon\",\n  \"customer_email\": \"asha@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "create"]
+            }
+          }
+        },
+        {
+          "name": "Create order — missing fields (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('lists offending fields', () => pm.expect(pm.response.json().error.details.fields).to.be.an('object'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{product_id}}\",\n  \"customer_email\": \"not-an-email\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "create"]
+            }
+          }
+        },
+        {
+          "name": "Create order — LAST UNIT (run twice: 201 then 409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 201) {",
+                  "  console.log('First buyer won. Order:', body.data.order.id);",
+                  "  console.log('Send this request AGAIN — it must now return 409 OUT_OF_STOCK.');",
+                  "  pm.collectionVariables.set('order_id', body.data.order.id);",
+                  "} else {",
+                  "  pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+                  "  pm.test('OUT_OF_STOCK', () => pm.expect(body.error.code).to.eql('OUT_OF_STOCK'));",
+                  "  console.log('Correctly rejected:', body.error.message);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{single_stock_product_id}}\",\n  \"customer_name\": \"Race Tester\",\n  \"customer_email\": \"race@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "create"]
+            },
+            "description": "Uses the seeded stock_count = 1 product. Send once → 201. Send again → 409 OUT_OF_STOCK with no order created."
+          }
+        },
+        {
+          "name": "Get order status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "console.log('status:', d.status, '| settled:', d.is_settled, '| paid:', d.is_paid);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{order_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{order_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Verify — forged signature (expect 400, stock released)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('INVALID_SIGNATURE', () => pm.expect(pm.response.json().error.code).to.eql('INVALID_SIGNATURE'));",
+                  "console.log('Rejected forged payment. Order marked failed, stock returned.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"{{order_id}}\",\n  \"razorpay_order_id\": \"{{razorpay_order_id}}\",\n  \"razorpay_payment_id\": \"pay_FAKE000000000\",\n  \"razorpay_signature\": \"deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "verify"]
+            },
+            "description": "Proves the server does not take the client's word for it. A hand-written signature must be rejected."
+          }
+        },
+        {
+          "name": "Verify — abandon payment (releases stock)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"{{order_id}}\",\n  \"failed\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "verify"]
+            },
+            "description": "What the browser sends when the customer closes the Razorpay widget."
+          }
+        },
+        {
+          "name": "Cancel expired — sweep now (minutes: 0)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "console.log('released:', pm.response.json().data.cancelled_count);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"minutes\": 0\n}" },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/cancel-expired",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "cancel-expired"]
+            },
+            "description": "minutes: 0 expires every reserved order immediately, so you don't have to wait 10 real minutes. Omit the body to use RESERVATION_TTL_MINUTES."
+          }
+        },
+        {
+          "name": "Cancel expired — cron style (GET)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cron_secret}}",
+                "description": "Only required when CRON_SECRET is set. Vercel Cron sends this automatically.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/cancel-expired",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "cancel-expired"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Overview (products + orders + stats)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/overview",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "overview"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

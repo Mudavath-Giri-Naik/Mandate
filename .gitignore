@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local env
+.env.local
+.env*.local
+!.env.example
+
+# contains a Supabase access token
+.mcp.json
