@@ -122,10 +122,15 @@ export const POST = withErrors(async (req: Request) => {
       amount: product.price,           // paise — same unit as our column
       currency: 'INR',
       receipt: order.id,               // our uuid is 36 chars, under Razorpay's 40
+      // Everything needed to reconstruct this order if our row is ever lost.
+      // Razorpay keeps its record independently of our database, which makes
+      // these notes the backstop of last resort — so include the customer's
+      // name too, not just their email.
       notes: {
         order_id: order.id,
         product_id: product.id,
         product_name: product.name,
+        customer_name: customerName,
         customer_email: customerEmail,
       },
     });

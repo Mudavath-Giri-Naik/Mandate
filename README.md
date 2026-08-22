@@ -240,14 +240,21 @@ Also worth trying:
 ### 4.4 Resetting
 
 ```bash
-npm run db:reset          # prompts first
-node scripts/reset-db.mjs --yes
+npm run db:reset            # dry run — prints the plan, changes nothing
+node scripts/reset-db.mjs --apply
 ```
 
-Deletes every order and puts each product's stock back to its seeded value, reporting the
-drift before it acts. Idempotent — running it on a clean database does nothing. It talks to
-Supabase directly, so it does not matter whether you were testing localhost or production;
-there is one database behind both.
+Deletes **test** orders only — an order counts as test data solely when its `customer_email`
+ends in `@example.com`, the domain RFC 2606 reserves and the only one these scripts use.
+Anything else is real and is left alone unless you pass `--all --i-understand` and type
+`DELETE` at the prompt.
+
+Stock is not restored to the raw seed numbers. It is set to **seeded stock minus units
+consumed by surviving paid orders**, so a genuine sale keeps its unit deducted rather than
+being silently put back on the shelf.
+
+Dry run is the default. It talks to Supabase directly, so it does not matter whether the mess
+came from localhost or production — one database sits behind both.
 
 Re-running [`supabase/setup.sql`](supabase/setup.sql) does the same thing and rebuilds the
 schema as well.

@@ -1,26 +1,39 @@
 #!/usr/bin/env node
 /**
- * Restore the database to its freshly-seeded state.
+ * Clear out test data and restore the seeded catalogue.
  *
- *   node scripts/reset-db.mjs            # ask before deleting
- *   node scripts/reset-db.mjs --yes      # no prompt
+ *   node scripts/reset-db.mjs              # dry run — shows the plan, changes nothing
+ *   node scripts/reset-db.mjs --apply      # do it
+ *   node scripts/reset-db.mjs --apply --all --i-understand   # nuke real orders too
  *
- * Deletes every order and puts each product's stock_count back to the value in
- * supabase/seed.sql. Use it after a testing session, or any time the catalogue
- * has drifted and you want a clean demo.
+ * ── What counts as test data ─────────────────────────────────────────────────
+ * An order is TEST only if its customer_email ends in @example.com — the domain
+ * RFC 2606 reserves for exactly this, and the only one the scripts in this repo
+ * ever use. Everything else is treated as REAL and is never touched without
+ * --all --i-understand.
  *
- * This talks to Supabase directly with the secret key from .env.local, so it
- * works regardless of which deployment you have been testing against — there
- * is one database behind both localhost and Vercel.
+ * Stock is not reset to the raw seed numbers. It is reset to
  *
- * Equivalent to re-running supabase/setup.sql, minus the schema work.
+ *     seeded stock − units consumed by surviving paid orders
+ *
+ * so a genuine sale keeps its unit deducted. Restoring stock that was really
+ * sold would silently oversell the item.
+ *
+ * ── Why this is so defensive ─────────────────────────────────────────────────
+ * The first version of this script ran `DELETE FROM orders` unconditionally and
+ * reset stock to the seed values. Run against the shared database while someone
+ * was actually shopping, it destroyed three real captured payments and put the
+ * sold units back on the shelf. Razorpay still had the payments, so the rows
+ * could be rebuilt — but nothing in the database itself would have told you
+ * they were ever there. Hence: dry run by default, real orders excluded by
+ * default, and stock arithmetic that respects completed sales.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 
-// Seeded stock, keyed by the natural identity of each row.
+/** Seeded stock, keyed by the natural identity of each row. */
 const SEED = {
   'Heavyweight Cotton Tee|M|White': 24,
   'Heavyweight Cotton Tee|L|Black': 18,
@@ -39,6 +52,16 @@ const SEED = {
   'Hand-Dyed Indigo Shibori Tee — Last One|M|Indigo': 1,
 };
 
+const argv = new Set(process.argv.slice(2));
+const APPLY = argv.has('--apply');
+const ALL = argv.has('--all');
+const ACK = argv.has('--i-understand');
+
+/** RFC 2606 reserves example.com. Our scripts use nothing else. */
+const isTestOrder = (o) =>
+  typeof o.customer_email === 'string' &&
+  o.customer_email.trim().toLowerCase().endsWith('@example.com');
+
 // ------------------------------------------------------------------- config --
 function readEnvLocal() {
   const envPath = path.join(process.cwd(), '.env.local');
@@ -46,13 +69,9 @@ function readEnvLocal() {
   if (!fs.existsSync(envPath)) return out;
   for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
     const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
+    if (!t || t.startsWith('#') || !t.includes('=')) continue;
     const i = t.indexOf('=');
-    if (i === -1) continue;
-    out[t.slice(0, i).trim()] = t
-      .slice(i + 1)
-      .trim()
-      .replace(/^["']|["']$/g, '');
+    out[t.slice(0, i).trim()] = t.slice(i + 1).trim().replace(/^["']|["']$/g, '');
   }
   return out;
 }
@@ -62,8 +81,7 @@ const SUPABASE_URL = env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error('Need NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
-  console.error('Put them in .env.local, or pass them as environment variables.');
+  console.error('Need NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local.');
   process.exit(1);
 }
 
@@ -74,105 +92,137 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
-async function api(method, pathname, body, prefer = 'return=representation') {
-  const res = await fetch(`${rest}${pathname}`, {
+async function api(method, p, body, prefer = 'return=representation') {
+  const res = await fetch(`${rest}${p}`, {
     method,
     headers: { ...headers, Prefer: prefer },
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`${method} ${pathname} → ${res.status} ${text}`);
+  if (!res.ok) throw new Error(`${method} ${p} → ${res.status} ${text}`);
   return text ? JSON.parse(text) : null;
 }
 
-// -------------------------------------------------------------------- report --
+const rupees = (paise) => `₹${(paise / 100).toLocaleString('en-IN')}`;
+
+// -------------------------------------------------------------------- survey --
 const products = await api('GET', '/products?select=id,name,size,color,stock_count,status');
-const orders = await api('GET', '/orders?select=id,status');
-
-const byStatus = orders.reduce((acc, o) => {
-  acc[o.status] = (acc[o.status] ?? 0) + 1;
-  return acc;
-}, {});
-
-const drift = products
-  .map((p) => {
-    const want = SEED[[p.name, p.size, p.color].join('|')];
-    return want === undefined || want === p.stock_count ? null : { p, want };
-  })
-  .filter(Boolean);
-
-console.log(`Database: ${SUPABASE_URL}`);
-console.log(`  products : ${products.length}`);
-console.log(
-  `  units    : ${products.reduce((a, p) => a + p.stock_count, 0)} (seeded total 134)`,
-);
-console.log(
-  `  orders   : ${orders.length}${
-    orders.length ? ` — ${Object.entries(byStatus).map(([k, v]) => `${v} ${k}`).join(', ')}` : ''
-  }`,
+const orders = await api(
+  'GET',
+  '/orders?select=id,product_id,status,amount,customer_email,razorpay_payment_id,created_at&order=created_at.asc',
 );
 
-if (drift.length === 0 && orders.length === 0) {
-  console.log('\nAlready at seeded state. Nothing to do.');
-  process.exit(0);
-}
+const testOrders = orders.filter(isTestOrder);
+const realOrders = orders.filter((o) => !isTestOrder(o));
+const doomed = ALL ? orders : testOrders;
+const surviving = orders.filter((o) => !doomed.includes(o));
 
-if (drift.length) {
-  console.log('\nStock drift:');
-  for (const { p, want } of drift) {
+console.log(`Database : ${SUPABASE_URL}`);
+console.log(`Mode     : ${APPLY ? 'APPLY' : 'DRY RUN (pass --apply to make changes)'}`);
+console.log('');
+console.log(`Orders   : ${orders.length} total — ${testOrders.length} test, ${realOrders.length} real`);
+
+if (realOrders.length) {
+  console.log('\nReal orders (NOT test data):');
+  for (const o of realOrders) {
+    const flag = o.razorpay_payment_id ? ` ${o.razorpay_payment_id}` : '';
+    const mark = doomed.includes(o) ? '  ← WILL BE DELETED' : '  (keeping)';
     console.log(
-      `  ${p.name} (${p.size}/${p.color}): ${p.stock_count} → ${want}${
-        p.status !== 'available' ? `, ${p.status} → available` : ''
-      }`,
+      `  ${o.created_at.slice(0, 19)}  ${o.status.padEnd(9)} ${rupees(o.amount).padStart(9)}  ${o.customer_email}${flag}${mark}`,
     );
   }
 }
 
-// ------------------------------------------------------------------- confirm --
-if (!process.argv.includes('--yes')) {
-  console.log(`\nThis DELETES all ${orders.length} order(s) and resets stock.`);
+// Units legitimately consumed by paid orders that will still exist afterwards.
+const soldByProduct = {};
+for (const o of surviving) {
+  if (o.status === 'paid' && o.product_id) {
+    soldByProduct[o.product_id] = (soldByProduct[o.product_id] ?? 0) + 1;
+  }
+}
+
+const stockPlan = products
+  .map((p) => {
+    const seeded = SEED[[p.name, p.size, p.color].join('|')];
+    if (seeded === undefined) return null;
+    const target = Math.max(0, seeded - (soldByProduct[p.id] ?? 0));
+    const status = target === 0 ? 'sold_out' : 'available';
+    if (target === p.stock_count && status === p.status) return null;
+    return { p, target, status, seeded, sold: soldByProduct[p.id] ?? 0 };
+  })
+  .filter(Boolean);
+
+if (stockPlan.length) {
+  console.log('\nStock changes:');
+  for (const { p, target, seeded, sold } of stockPlan) {
+    const why = sold ? ` (seed ${seeded} − ${sold} sold)` : '';
+    console.log(`  ${p.name} (${p.size}/${p.color}): ${p.stock_count} → ${target}${why}`);
+  }
+}
+
+console.log('');
+if (doomed.length === 0 && stockPlan.length === 0) {
+  console.log('Nothing to do — already clean.');
+  process.exit(0);
+}
+console.log(`Plan: delete ${doomed.length} order(s), adjust ${stockPlan.length} product(s).`);
+
+// -------------------------------------------------------------------- guards --
+const doomedReal = doomed.filter((o) => !isTestOrder(o));
+
+if (doomedReal.length && !(ALL && ACK)) {
+  console.error(
+    `\nRefusing: ${doomedReal.length} of those are REAL orders. Pass --all --i-understand.`,
+  );
+  process.exit(1);
+}
+
+if (!APPLY) {
+  console.log('\nDry run — nothing changed. Re-run with --apply.');
+  process.exit(0);
+}
+
+if (doomedReal.length) {
+  const paid = doomedReal.filter((o) => o.razorpay_payment_id);
+  console.log(
+    `\n⚠  About to delete ${doomedReal.length} real order(s), ${paid.length} with a captured Razorpay payment.`,
+  );
+  console.log('   Razorpay keeps its own record, but this database will not.');
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = (await rl.question('Continue? [y/N] ')).trim().toLowerCase();
+  const typed = (await rl.question('   Type DELETE to confirm: ')).trim();
   rl.close();
-  if (answer !== 'y' && answer !== 'yes') {
+  if (typed !== 'DELETE') {
     console.log('Cancelled.');
     process.exit(0);
   }
 }
 
-// --------------------------------------------------------------------- reset --
+// --------------------------------------------------------------------- apply --
 console.log('');
 
-if (orders.length) {
-  // Orders reference products, so they go first.
-  await api('DELETE', '/orders?id=not.is.null', null, 'return=minimal');
-  console.log(`  deleted ${orders.length} order(s)`);
+if (doomed.length) {
+  // Delete by explicit id list — never a blanket predicate.
+  const ids = doomed.map((o) => o.id);
+  for (let i = 0; i < ids.length; i += 50) {
+    const batch = ids.slice(i, i + 50);
+    await api('DELETE', `/orders?id=in.(${batch.join(',')})`, null, 'return=minimal');
+  }
+  console.log(`  deleted ${ids.length} order(s)`);
 }
 
-for (const { p, want } of drift) {
-  await api(
-    'PATCH',
-    `/products?id=eq.${p.id}`,
-    { stock_count: want, status: 'available' },
-    'return=minimal',
-  );
-  console.log(`  reset ${p.name} (${p.size}/${p.color}) → ${want}`);
+for (const { p, target, status } of stockPlan) {
+  await api('PATCH', `/products?id=eq.${p.id}`, { stock_count: target, status }, 'return=minimal');
+  console.log(`  ${p.name} (${p.size}/${p.color}) → ${target}`);
 }
 
-// ------------------------------------------------------------------- verify --
-const after = await api('GET', '/products?select=name,size,color,stock_count,status');
-const afterOrders = await api('GET', '/orders?select=id');
-const stillWrong = after.filter(
-  (p) => SEED[[p.name, p.size, p.color].join('|')] !== p.stock_count,
-);
-const total = after.reduce((a, p) => a + p.stock_count, 0);
+// -------------------------------------------------------------------- verify --
+const afterProducts = await api('GET', '/products?select=stock_count');
+const afterOrders = await api('GET', '/orders?select=id,status,customer_email');
+const total = afterProducts.reduce((a, p) => a + p.stock_count, 0);
+const paidLeft = afterOrders.filter((o) => o.status === 'paid').length;
 
 console.log('');
-if (stillWrong.length === 0 && afterOrders.length === 0 && total === 134) {
-  console.log(`Clean: 15 products, ${total} units, 0 orders.`);
-  console.log('The one-unit race item is back in stock.');
-} else {
-  console.log(`Incomplete — ${total} units, ${afterOrders.length} orders,`);
-  console.log(`${stillWrong.length} product(s) still wrong. Re-run supabase/setup.sql.`);
-  process.exit(1);
+console.log(`Done: ${afterOrders.length} order(s) remain (${paidLeft} paid), ${total} units in stock.`);
+if (afterOrders.some((o) => !isTestOrder(o))) {
+  console.log('Real orders were preserved.');
 }
