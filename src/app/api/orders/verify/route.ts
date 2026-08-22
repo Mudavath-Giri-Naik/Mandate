@@ -73,8 +73,10 @@ export const POST = withErrors(async (req: Request) => {
     const didTransition = (transitioned?.length ?? 0) > 0;
 
     if (didTransition && order.product_id) {
-      const { error } = await db.rpc('release_product_stock', {
+      // Give back exactly what was reserved — a 3-unit order returns 3 units.
+      const { error } = await db.rpc('release_product_stock_qty', {
         p_product_id: order.product_id,
+        p_quantity: order.quantity ?? 1,
       });
       if (error) console.error('[orders/verify] stock release failed', order.id, error);
     }

@@ -616,6 +616,392 @@
           }
         }
       ]
+    },
+    {
+      "name": "Agent API (POST /api/orders)",
+      "description": "Programmatic order placement for agent callers such as Parley. Same atomic stock lock as the storefront checkout - both call reserveAndCreateOrder() in lib/orders, which reserves via the reserve_product_stock_qty conditional UPDATE.\n\nAdds quantity and discount_percent, which POST /api/orders/create does not accept.\n\nALL AMOUNTS ARE PAISE, in and out.\n\nRequires supabase/migration-002-agent-orders.sql.",
+      "item": [
+        {
+          "name": "Place order - simple",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('returns order_id', () => pm.expect(d.order_id).to.be.a('string'));",
+                  "pm.test('status is reserved', () => pm.expect(d.status).to.eql('reserved'));",
+                  "pm.test('amount_charged is whole paise', () => pm.expect(Number.isInteger(d.amount_charged)).to.be.true);",
+                  "pm.test('payment reference present', () => pm.expect(d.payment.razorpay_order_id).to.match(/^order_/));",
+                  "pm.test('razorpay amount equals amount_charged', () => pm.expect(d.payment.amount).to.eql(d.amount_charged));",
+                  "pm.test('defaults qty 1 discount 0', () => {",
+                  "  pm.expect(d.pricing.quantity).to.eql(1);",
+                  "  pm.expect(d.pricing.discount_percent).to.eql(0);",
+                  "});",
+                  "pm.collectionVariables.set('order_id', d.order_id);",
+                  "pm.collectionVariables.set('razorpay_order_id', d.payment.razorpay_order_id);",
+                  "console.log('amount_charged (paise):', d.amount_charged);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{product_id}}\",\n  \"customer_name\": \"Parley Agent\",\n  \"customer_email\": \"agent@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "Minimal body. quantity defaults to 1, discount_percent to 0."
+          }
+        },
+        {
+          "name": "Place order - quantity 3",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const p = pm.response.json().data.pricing;",
+                  "pm.test('quantity recorded', () => pm.expect(p.quantity).to.eql(3));",
+                  "pm.test('subtotal = unit_price x 3', () => pm.expect(p.subtotal).to.eql(p.unit_price * 3));",
+                  "pm.test('no discount so charged = subtotal', () => pm.expect(p.amount_charged).to.eql(p.subtotal));",
+                  "console.log('3 units ->', p.amount_charged, 'paise');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{product_id}}\",\n  \"customer_name\": \"Parley Agent\",\n  \"customer_email\": \"agent@example.com\",\n  \"quantity\": 3\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "Reserves 3 units in ONE atomic UPDATE (stock_count >= 3), not three separate reservations."
+          }
+        },
+        {
+          "name": "Place order - 25% discount",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const d = pm.response.json().data;",
+                  "const p = d.pricing;",
+                  "pm.test('discount recorded', () => pm.expect(p.discount_percent).to.eql(25));",
+                  "pm.test('amount = round(subtotal * 0.75)', () => pm.expect(p.amount_charged).to.eql(Math.round(p.subtotal * 0.75)));",
+                  "pm.test('discount_amount reconciles', () => pm.expect(p.subtotal - p.amount_charged).to.eql(p.discount_amount));",
+                  "pm.test('whole paise', () => pm.expect(Number.isInteger(p.amount_charged)).to.be.true);",
+                  "pm.test('razorpay charges the discounted amount', () => pm.expect(d.payment.amount).to.eql(p.amount_charged));",
+                  "console.log(p.subtotal, '-', p.discount_amount, '=', p.amount_charged, 'paise');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{product_id}}\",\n  \"customer_name\": \"Parley Agent\",\n  \"customer_email\": \"agent@example.com\",\n  \"quantity\": 2,\n  \"discount_percent\": 25\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "Discount applies to the whole line. All figures in paise; Math.round keeps it integral."
+          }
+        },
+        {
+          "name": "Place order - out of stock (expect 409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+                  "const b = pm.response.json();",
+                  "pm.test('OUT_OF_STOCK', () => pm.expect(b.error.code).to.eql('OUT_OF_STOCK'));",
+                  "pm.test('JSON not an HTML page', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json'));",
+                  "console.log(b.error.message);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"76377740-56be-444e-890e-aea7c6e2ee0f\",\n  \"customer_name\": \"Parley Agent\",\n  \"customer_email\": \"agent@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "The Shibori Tee is the sold-out test product. Must fail cleanly with no order created."
+          }
+        },
+        {
+          "name": "Place order - quantity exceeds stock (expect 409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+                  "const b = pm.response.json();",
+                  "pm.test('OUT_OF_STOCK', () => pm.expect(b.error.code).to.eql('OUT_OF_STOCK'));",
+                  "pm.test('reports what was asked for', () => pm.expect(b.error.details.requested_quantity).to.eql(99));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{product_id}}\",\n  \"customer_name\": \"Parley Agent\",\n  \"customer_email\": \"agent@example.com\",\n  \"quantity\": 99\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "Partial fulfilment is never silent: asking for more than exists reserves nothing."
+          }
+        },
+        {
+          "name": "Place order - invalid quantity (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('names the field', () => pm.expect(pm.response.json().error.details.fields.quantity).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{product_id}}\",\n  \"customer_name\": \"Parley Agent\",\n  \"customer_email\": \"agent@example.com\",\n  \"quantity\": 0\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "quantity must be an integer >= 1. Zero, negative, fractional and string values are rejected."
+          }
+        },
+        {
+          "name": "Place order - invalid discount (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('names the field', () => pm.expect(pm.response.json().error.details.fields.discount_percent).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{product_id}}\",\n  \"customer_name\": \"Parley Agent\",\n  \"customer_email\": \"agent@example.com\",\n  \"discount_percent\": 150\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "discount_percent must be a whole number 0-100."
+          }
+        },
+        {
+          "name": "Place order - unknown product (expect 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));",
+                  "pm.test('NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"00000000-0000-4000-8000-000000000000\",\n  \"customer_name\": \"Parley Agent\",\n  \"customer_email\": \"agent@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "Distinguished from 409: the product does not exist at all."
+          }
+        },
+        {
+          "name": "Place order - 100% discount (expect 400, under Razorpay minimum)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "console.log(pm.response.json().error.message);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{product_id}}\",\n  \"customer_name\": \"Parley Agent\",\n  \"customer_email\": \"agent@example.com\",\n  \"discount_percent\": 100\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "Razorpay rejects orders under 100 paise. Caught before any stock is reserved."
+          }
+        }
+      ]
     }
   ]
 }

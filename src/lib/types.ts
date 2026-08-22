@@ -26,7 +26,13 @@ export interface Order {
   product_id: string | null;
   customer_name: string | null;
   customer_email: string | null;
-  /** Paise. */
+  /** Units ordered. 1 for the browser checkout. */
+  quantity: number;
+  /** Paise, per unit, at the time of ordering. */
+  unit_price: number | null;
+  /** Whole percent, 0-100. */
+  discount_percent: number;
+  /** Paise. unit_price * quantity, less the discount. */
   amount: number;
   razorpay_order_id: string | null;
   razorpay_payment_id: string | null;

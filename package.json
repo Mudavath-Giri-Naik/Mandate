@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test:smoke": "node scripts/smoke-test.mjs",
     "test:race": "node scripts/race-test.mjs",
-    "db:reset": "node scripts/reset-db.mjs"
+    "db:reset": "node scripts/reset-db.mjs",
+    "test:agent": "node scripts/test-agent-api.mjs",
+    "test:race-agent": "node scripts/race-test-agent.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

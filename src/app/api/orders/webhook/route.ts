@@ -80,7 +80,10 @@ export const POST = withErrors(async (req: Request) => {
     const changed = (data?.length ?? 0) > 0;
     // Only the call that actually performed the transition releases stock.
     if (changed && order.product_id) {
-      await db.rpc('release_product_stock', { p_product_id: order.product_id });
+      await db.rpc('release_product_stock_qty', {
+        p_product_id: order.product_id,
+        p_quantity: order.quantity ?? 1,
+      });
     }
     return ok({ event: event.event, order_id: order.id, changed, stock_released: changed });
   }
