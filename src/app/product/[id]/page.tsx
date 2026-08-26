@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getProduct } from '@/lib/data';
+import { getProductJsonLd } from '@/lib/discovery';
 import { formatPaise } from '@/lib/money';
 import { ErrorNotice, SetupNotice } from '@/components/ui';
 
@@ -9,7 +10,12 @@ export const dynamic = 'force-dynamic';
 
 export default async function ProductPage({ params }: PageProps<'/product/[id]'>) {
   const { id } = await params;
-  const result = await getProduct(id);
+
+  // Both reads describe the same product and neither depends on the other, so
+  // they go out together. The JSON-LD is fetched here, at render time, rather
+  // than injected in the browser: a crawler that does not run scripts has to
+  // find the markup in the initial HTML or it finds nothing at all.
+  const [result, jsonLd] = await Promise.all([getProduct(id), getProductJsonLd(id)]);
 
   if (!result.ok) {
     if (result.code === 'NOT_FOUND') notFound();
@@ -28,6 +34,14 @@ export default async function ProductPage({ params }: PageProps<'/product/[id]'>
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          // Server-rendered from the Discovery Service's own markup for this id.
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      )}
+
       <Link href="/" className="text-sm text-muted transition hover:text-foreground">
         ← Back to shop
       </Link>
