@@ -1,4 +1,4 @@
-import { DISCOVERY_SERVICE_URL_VAR, fetchFromDiscovery } from '@/lib/discovery';
+import { discoveryBaseUrl, fetchFromDiscovery } from '@/lib/discovery';
 
 /**
  * `GET /.well-known/ucp` — this storefront's UCP business profile.
@@ -28,15 +28,14 @@ export async function GET(): Promise<Response> {
   try {
     upstream = await fetchFromDiscovery('/.well-known/ucp');
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const configuration = message.startsWith('Missing environment variable');
+    // The service is unreachable. Say so as a 502 rather than an empty profile:
+    // an agent can retry a bad gateway, but it reads a malformed profile as a
+    // merchant that genuinely cannot do anything.
     console.error('[well-known/ucp]', err);
     return Response.json(
       {
-        error: configuration ? 'not_configured' : 'discovery_unreachable',
-        message: configuration
-          ? message
-          : `Could not reach the Discovery Service named by ${DISCOVERY_SERVICE_URL_VAR}.`,
+        error: 'discovery_unreachable',
+        message: `Could not reach the Discovery Service at ${discoveryBaseUrl()}.`,
       },
       { status: 502, headers: { ...CORS, 'Cache-Control': 'no-store' } },
     );

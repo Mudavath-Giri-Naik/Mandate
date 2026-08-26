@@ -11,31 +11,31 @@
  *   - the `Product` JSON-LD embedded in each product page, read per render from
  *     the service so the markup can never drift from the catalogue behind it.
  *
- * There is no hardcoded fallback URL. A wrong-but-plausible default would make a
- * misconfigured deployment look wired up while serving an agent nothing.
+ * `DISCOVERY_SERVICE_URL` overrides the deployment this points at — a local
+ * instance while developing, a staging one while testing. The default below is
+ * this storefront's own Discovery Service, verified serving a valid UCP profile
+ * before it was written down. It is a default rather than a required variable
+ * because the failure it would otherwise cause is the exact one this change
+ * exists to fix: a storefront that looks wired up and answers an agent with
+ * nothing, because a variable was missed on one deployment.
  */
 
 export const DISCOVERY_SERVICE_URL_VAR = 'DISCOVERY_SERVICE_URL';
 
-/** The service's base origin, or null when it has not been configured. */
-export function discoveryBaseUrl(): string | null {
+/** The Discovery Service deployed for this storefront. */
+const DEFAULT_DISCOVERY_SERVICE_URL = 'https://parley-rosy.vercel.app';
+
+/** The service's base origin, without a trailing slash. */
+export function discoveryBaseUrl(): string {
   const raw = process.env[DISCOVERY_SERVICE_URL_VAR]?.trim();
-  if (!raw) return null;
-  return raw.replace(/\/+$/, '');
+  return (raw || DEFAULT_DISCOVERY_SERVICE_URL).replace(/\/+$/, '');
 }
 
 /** How long to wait on the service before giving up on it. */
 const TIMEOUT_MS = 8_000;
 
 export async function fetchFromDiscovery(path: string): Promise<Response> {
-  const base = discoveryBaseUrl();
-  if (!base) {
-    throw new Error(
-      `Missing environment variable ${DISCOVERY_SERVICE_URL_VAR}. Set it to the ` +
-        'origin of the deployed Discovery Service, e.g. https://parley.example.com.',
-    );
-  }
-  return fetch(`${base}${path}`, {
+  return fetch(`${discoveryBaseUrl()}${path}`, {
     // Agents read this for a live answer; a cached one can be wrong about stock.
     cache: 'no-store',
     headers: { Accept: 'application/json' },
