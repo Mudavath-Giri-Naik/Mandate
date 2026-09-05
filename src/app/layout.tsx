@@ -7,7 +7,7 @@ const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Mandate — Storefront',
+  title: 'SnapCart — Storefront',
   description: 'A single-product-checkout clothing store on Next.js, Supabase and Razorpay.',
 };
 
@@ -21,7 +21,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
         <header className="border-b border-line bg-surface">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
             <Link href="/" className="text-lg font-semibold tracking-tight">
-              Mandate
+              SnapCart
             </Link>
             <nav className="flex items-center gap-6 text-sm text-muted">
               <Link href="/" className="hover:text-foreground">Shop</Link>

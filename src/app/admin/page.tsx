@@ -3,6 +3,7 @@ import { getAdminOverview } from '@/lib/data';
 import { formatPaise } from '@/lib/money';
 import { StatusPill, ErrorNotice, SetupNotice } from '@/components/ui';
 import SweepButton from './sweep-button';
+import RestockButton from './restock-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,10 @@ export default async function AdminPage() {
             Live stock and order state. No auth on this page — testing only.
           </p>
         </div>
-        <SweepButton />
+        <div className="flex items-start gap-2">
+          <RestockButton />
+          <SweepButton />
+        </div>
       </div>
 
       {/* -------------------------------------------------------------- stats -- */}

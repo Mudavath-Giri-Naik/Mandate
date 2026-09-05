@@ -78,7 +78,7 @@ export const POST = withErrors(async (req: Request) => {
         amount: razorpayOrder.amount,
         currency: razorpayOrder.currency,
         order_id: razorpayOrder.id,
-        name: 'Mandate',
+        name: 'SnapCart',
         description: reservedProduct.name,
         prefill: { name: customerName, email: customerEmail },
       },
