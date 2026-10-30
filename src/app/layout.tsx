@@ -26,6 +26,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
             <nav className="flex items-center gap-6 text-sm text-muted">
               <Link href="/" className="hover:text-foreground">Shop</Link>
               <Link href="/admin" className="hover:text-foreground">Admin</Link>
+              <Link href="/endpoints" className="hover:text-foreground">Endpoints</Link>
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900">
                 Razorpay test mode
               </span>
