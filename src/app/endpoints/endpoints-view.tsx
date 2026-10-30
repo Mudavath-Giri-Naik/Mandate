@@ -133,7 +133,10 @@ const GROUPS: Group[] = [
   },
 ];
 
-type Health = { state: 'idle' | 'checking' } | { state: 'up' | 'down'; status: number; ms: number };
+type Health =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'up' | 'down'; status: number; ms: number };
 
 function resolvePath(path: string, productId: string | null) {
   if (path.includes(SAMPLE_PRODUCT)) return productId ? path.replace(SAMPLE_PRODUCT, productId) : null;
@@ -284,14 +287,15 @@ function HealthBadge({ check, health }: { check?: boolean; health?: Health }) {
   if (!check) return <span className="text-xs text-muted">Not auto-checked</span>;
   if (!health || health.state === 'idle') return <span className="text-xs text-muted">—</span>;
   if (health.state === 'checking') return <span className="text-xs text-muted">Checking…</span>;
-  const up = health.state === 'up';
+  const { state, status, ms } = health;
+  const up = state === 'up';
   return (
     <span
       className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
         up ? 'bg-emerald-100 text-emerald-900' : 'bg-red-100 text-red-800'
       }`}
     >
-      {up ? `Healthy · ${health.status} · ${health.ms}ms` : `Down${health.status ? ` · ${health.status}` : ''}`}
+      {up ? `Healthy · ${status} · ${ms}ms` : `Down${status ? ` · ${status}` : ''}`}
     </span>
   );
 }
